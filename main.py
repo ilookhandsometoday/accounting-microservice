@@ -15,13 +15,14 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
 
     async def get_exchange_rate_async(self):
         async with aiohttp.ClientSession() as session:
-            async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
-                while True:
+            while True:
+                async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                     text: str = await response.text()
-                    rates = json.loads(text)['Valute']
-                    for key in self.rate_dict.keys():
-                        self.rate_dict[key] = rates[key]["Value"]
-                    await asyncio.sleep(self.period)
+                rates = json.loads(text)['Valute']
+                for key in self.rate_dict.keys():
+                    self.rate_dict[key] = rates[key]["Value"]
+                print(self.rate_dict)
+                await asyncio.sleep(self.period)
         #response = requests.get(r'https://www.cbr-xml-daily.ru/daily_json.js')
         #rate_dict = await json.loads(response.text)['Valute']
 
