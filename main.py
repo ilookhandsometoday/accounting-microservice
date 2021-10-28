@@ -9,7 +9,7 @@ from microservice import AbstractAccountingMicroservice
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
 
-    def __init__(self, currency1: str = "USD", currency2: str = "EUR", currency3: str = "RUB", period: int = 60):
+    def __init__(self, period: int, currency1: str = "USD", currency2: str = "EUR", currency3: str = "RUB"):
         self.rate_dict = {currency1: 0, currency2: 0, currency3: 0}
         self.period = period
 
@@ -28,8 +28,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
 
 
 async def main():
-    app = AccountingMicroservice("USD", "EUR", "GBP")
-    await app.get_exchange_rate_async()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--period", action="store", default=5, type=int, required=False, help="period in seconds",
+                        metavar="N")
+    arguments = parser.parse_args()
+
+    microservice = AccountingMicroservice(arguments.period, "USD", "EUR", "GBP")
+    await microservice.get_exchange_rate_async()
     print("debug")
 
 
