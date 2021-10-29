@@ -9,8 +9,9 @@ from microservice import AbstractAccountingMicroservice
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
 
-    def __init__(self, period: int, currency1: str = "USD", currency2: str = "EUR", currency3: str = "RUB"):
-        self.rate_dict = {currency1: 0, currency2: 0, currency3: 0}
+    def __init__(self, period: int, balance: dict[str, float]):
+        self.balance = balance
+        self.rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
         self.period = period
 
     async def get_exchange_rate_async(self):
@@ -29,11 +30,17 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--period", action="store", default=5, type=int, required=False, help="period in seconds",
+    parser.add_argument("--period", action="store", default=5, type=int, required=False, help="period in minutes",
                         metavar="N")
+    parser.add_argument("--usd", action="store", default=0, type=float, required=False, help="starting balance of USD",
+                        metavar="X")
+    parser.add_argument("--eur", action="store", default=0, type=float, required=False, help="starting balance of EUR",
+                        metavar="X")
+    parser.add_argument("--rub", action="store", default=0, type=float, required=False, help="starting balance of RUB",
+                        metavar="X")
     arguments = parser.parse_args()
-
-    microservice = AccountingMicroservice(arguments.period, "USD", "EUR", "GBP")
+    microservice = AccountingMicroservice(arguments.period * 60, {"USD": arguments.usd, "EUR": arguments.eur,
+                                                                  "RUB": arguments.rub})
     await microservice.get_exchange_rate_async()
     print("debug")
 
