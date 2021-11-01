@@ -38,7 +38,11 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         for key in self.__balance.keys():
             result += self.currency_balance(key) + '\n'
         result += '\n'
+        return result
 
+    def all_currencies_rates(self) -> str:
+        """Synchronous method to display all the exchange rates (including the non-RUB ones"""
+        result: str = ""
         rate_format = '{currencies}:{rate}\n'
         for key, value in self.__rate_dict.items():
             result += rate_format.format(currencies='RUB-' + key, rate=value)
@@ -78,7 +82,8 @@ async def currency_balance_get(request: web.Request):
 
 async def all_currencies_balance_get(request: web.Request):
     global microservice
-    return web.Response(text=microservice.all_currencies_balance(), headers={'content-type': 'text/plain'})
+    return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates(),
+                        headers={'content-type': 'text/plain'})
 
 
 def main():
