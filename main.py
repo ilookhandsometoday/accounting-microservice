@@ -13,11 +13,11 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         self._rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
         self._period_seconds = period_minutes*60
 
-    async def get_exchange_rate_async(self, ):
+    async def get_exchange_rate_async(self):
         """Asynchronously fetches exchange rates from an external API based on keys from rate_dict.
         Stores them as values of rate_dict"""
-        async with ClientSession() as session:
-            while True:
+        while True:
+            async with ClientSession() as session:
                 async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                     text: str = await response.text()
                 rates = json.loads(text)['Valute']
@@ -80,6 +80,11 @@ async def _all_currencies_balance_get(request: web.Request):
                         headers={'content-type': 'text/plain'})
 
 
+async def _start_background_tasks(app):
+    microservice: AccountingMicroservice = app['microservice_instance']
+    app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--period", action="store", default=5, type=int, required=False, help="period in minutes",
@@ -96,6 +101,7 @@ def main():
                                                              "RUB": arguments.rub})
     app = web.Application()
     app['microservice_instance'] = microservice
+    app.on_startup.append(_start_background_tasks)
     app.add_routes([web.get(r'/{name:[a-z]{3}}/get', _currency_balance_get),
                     web.get('/amount/get', _all_currencies_balance_get)])
     web.run_app(app, host="localhost", port=8080)
