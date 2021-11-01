@@ -37,7 +37,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
 async def currency_balance_get(request: web.Request):
     currency_name: str = request.match_info['name']
     global microservice
-    return web.Response(text=microservice.currency_balance(currency_name))
+    return web.Response(text=microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
 
 
 def main():
