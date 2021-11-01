@@ -40,6 +40,19 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         result += '\n'
         return result
 
+    def calculate_non_rub_rates(self) -> dict[str, float]:
+        """Synchronous methods that calculates non-rub exchange rates as they are not stored"""
+        result_dict = {}
+        rate_dict = self.__rate_dict.copy()
+        for i in range(2):
+            popped_currency = rate_dict.popitem()
+            for key, value in rate_dict.items():
+                rate = 0
+                if value != 0:
+                    rate = popped_currency[1] / value
+                result_dict.update({popped_currency[0] + '-' + key: rate})
+        return result_dict
+
     def all_currencies_rates(self) -> str:
         """Synchronous method to display all the exchange rates (including the non-RUB ones"""
         result: str = ""
@@ -47,42 +60,26 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         for key, value in self.__rate_dict.items():
             result += rate_format.format(currencies='RUB-' + key, rate=value)
 
-        #rates for non-rub exchanges are calculated here
-        non_rub_rates = ''
-        # copy needed because the dictionary will have to be popped in the code below to get non-rub rates
-        rate_dict = self.__rate_dict.copy()
-        popped_currency = rate_dict.popitem()
-        for key, value in rate_dict.items():
-            rate = 0
-            if value != 0:
-                rate = popped_currency[1] / value
-            non_rub_rates += rate_format.format(currencies=popped_currency[0] + '-' + key,
-                                                rate=rate)
-        popped_currency = rate_dict.popitem()
-        if rate_dict:
-            for key, value in rate_dict.items():
-                rate = 0
-                if value != 0:
-                    rate = popped_currency[1] / value
-                non_rub_rates += rate_format.format(currencies=popped_currency[0] + '-' + key,
-                                                    rate=rate)
+        non_rub_rates = self.calculate_non_rub_rates()
+        for key, value in non_rub_rates.items():
+            result += rate_format.format(currencies=key, rate=value)
 
-        result += non_rub_rates + '\n'
+        result += '\n'
         return result
 
 
-microservice: AccountingMicroservice = None
+_microservice: AccountingMicroservice = None
 
 
-async def currency_balance_get(request: web.Request):
+async def _currency_balance_get(request: web.Request):
     currency_name: str = request.match_info['name']
-    global microservice
-    return web.Response(text=microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
+    global _microservice
+    return web.Response(text=_microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
 
 
-async def all_currencies_balance_get(request: web.Request):
-    global microservice
-    return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates(),
+async def _all_currencies_balance_get(request: web.Request):
+    global _microservice
+    return web.Response(text=_microservice.all_currencies_balance() + _microservice.all_currencies_rates(),
                         headers={'content-type': 'text/plain'})
 
 
@@ -98,12 +95,12 @@ def main():
                         metavar="X")
     arguments = parser.parse_args()
 
-    global microservice
-    microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
-                                                             "RUB": arguments.rub})
+    global _microservice
+    _microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
+                                                              "RUB": arguments.rub})
     app = web.Application()
-    app.add_routes([web.get(r'/{name:[a-z]{3}}/get', currency_balance_get),
-                    web.get('/amount/get', all_currencies_balance_get)])
+    app.add_routes([web.get(r'/{name:[a-z]{3}}/get', _currency_balance_get),
+                    web.get('/amount/get', _all_currencies_balance_get)])
     web.run_app(app, host="localhost", port=8080)
 
 
