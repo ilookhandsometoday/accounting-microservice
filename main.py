@@ -8,10 +8,10 @@ from microservice import AbstractAccountingMicroservice
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
     def __init__(self, period_minutes: int, balance: dict[str, float]):
-        self.__balance = balance
+        self._balance = balance
         # RUB to RUB exchange rate is 1 to 1; no need to store it
-        self.__rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
-        self.__period_seconds = period_minutes*60
+        self._rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
+        self._period_seconds = period_minutes*60
 
     async def get_exchange_rate_async(self, ):
         """Asynchronously fetches exchange rates from an external API based on keys from rate_dict.
@@ -21,21 +21,21 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                     text: str = await response.text()
                 rates = json.loads(text)['Valute']
-                for key in self.__rate_dict.keys():
-                    self.__rate_dict[key] = rates[key]["Value"]
-                await asyncio.sleep(self.__period_seconds)
+                for key in self._rate_dict.keys():
+                    self._rate_dict[key] = rates[key]["Value"]
+                await asyncio.sleep(self._period_seconds)
 
     def currency_balance(self, currency: str) -> str:
         """Synchronous method to pass the currency balance into the aiohttp-compatible handlers"""
         result_format: str = '{curr}:{bal}'
         if currency.islower():
             currency = currency.upper()
-        return result_format.format(curr=currency, bal=self.__balance[currency])
+        return result_format.format(curr=currency, bal=self._balance[currency])
 
     def all_currencies_balance(self) -> str:
         """Synchronous method to pass the total balance into the aiohttp-compatible handlers"""
         result: str = ""
-        for key in self.__balance.keys():
+        for key in self._balance.keys():
             result += self.currency_balance(key) + '\n'
         result += '\n'
         return result
@@ -43,7 +43,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
     def calculate_non_rub_rates(self) -> dict[str, float]:
         """Synchronous methods that calculates non-rub exchange rates as they are not stored"""
         result_dict = {}
-        rate_dict = self.__rate_dict.copy()
+        rate_dict = self._rate_dict.copy()
         for i in range(2):
             popped_currency = rate_dict.popitem()
             for key, value in rate_dict.items():
@@ -57,7 +57,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         """Synchronous method to display all the exchange rates (including the non-RUB ones"""
         result: str = ""
         rate_format = '{currencies}:{rate}\n'
-        for key, value in self.__rate_dict.items():
+        for key, value in self._rate_dict.items():
             result += rate_format.format(currencies='RUB-' + key, rate=value)
 
         non_rub_rates = self.calculate_non_rub_rates()
@@ -68,18 +68,15 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         return result
 
 
-_microservice: AccountingMicroservice = None
-
-
 async def _currency_balance_get(request: web.Request):
     currency_name: str = request.match_info['name']
-    global _microservice
-    return web.Response(text=_microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
+    microservice: AccountingMicroservice = request.app['microservice_instance']
+    return web.Response(text=microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
 
 
 async def _all_currencies_balance_get(request: web.Request):
-    global _microservice
-    return web.Response(text=_microservice.all_currencies_balance() + _microservice.all_currencies_rates(),
+    microservice: AccountingMicroservice = request.app['microservice_instance']
+    return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates(),
                         headers={'content-type': 'text/plain'})
 
 
@@ -95,10 +92,10 @@ def main():
                         metavar="X")
     arguments = parser.parse_args()
 
-    global _microservice
-    _microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
-                                                              "RUB": arguments.rub})
+    microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
+                                                             "RUB": arguments.rub})
     app = web.Application()
+    app['microservice_instance'] = microservice
     app.add_routes([web.get(r'/{name:[a-z]{3}}/get', _currency_balance_get),
                     web.get('/amount/get', _all_currencies_balance_get)])
     web.run_app(app, host="localhost", port=8080)
