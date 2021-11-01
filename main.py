@@ -16,14 +16,18 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
     async def get_exchange_rate_async(self):
         """Asynchronously fetches exchange rates from an external API based on keys from rate_dict.
         Stores them as values of rate_dict"""
-        while True:
-            async with ClientSession() as session:
-                async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
-                    text: str = await response.text()
-                rates = json.loads(text)['Valute']
-                for key in self._rate_dict.keys():
-                    self._rate_dict[key] = rates[key]["Value"]
-                await asyncio.sleep(self._period_seconds)
+        cancelled = False
+        async with ClientSession() as session:
+            while not cancelled:
+                try:
+                    async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
+                        text: str = await response.text()
+                    rates = json.loads(text)['Valute']
+                    for key in self._rate_dict.keys():
+                        self._rate_dict[key] = rates[key]["Value"]
+                    await asyncio.sleep(self._period_seconds)
+                except asyncio.CancelledError:
+                    cancelled = True
 
     def currency_balance(self, currency: str) -> str:
         """Synchronous method to pass the currency balance into the aiohttp-compatible handlers"""
@@ -85,6 +89,12 @@ async def _start_background_tasks(app):
     app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
 
 
+async def _on_server_shutdown(app):
+    microservice: AccountingMicroservice = app['microservice_instance']
+    app['rate_fetch'].cancel()
+    await app['rate_fetch']
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--period", action="store", default=5, type=int, required=False, help="period in minutes",
@@ -102,6 +112,7 @@ def main():
     app = web.Application()
     app['microservice_instance'] = microservice
     app.on_startup.append(_start_background_tasks)
+    app.on_shutdown.append(_on_server_shutdown)
     app.add_routes([web.get(r'/{name:[a-z]{3}}/get', _currency_balance_get),
                     web.get('/amount/get', _all_currencies_balance_get)])
     web.run_app(app, host="localhost", port=8080)
