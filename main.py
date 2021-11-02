@@ -11,7 +11,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         self._balance = balance
         # RUB to RUB exchange rate is 1 to 1; no need to store it
         self._rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
-        self._period_seconds = period_minutes*60
+        self._period_seconds = period_minutes * 60
 
     async def get_exchange_rate_async(self):
         """Asynchronously fetches exchange rates from an external API based on keys from rate_dict.
@@ -37,7 +37,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         return result_format.format(curr=currency, bal=self._balance[currency])
 
     def all_currencies_balance(self) -> str:
-        """Synchronous method to pass the total balance into the aiohttp-compatible handlers"""
+        """Synchronous method to pass the balance of each currency into the aiohttp-compatible handlers"""
         result: str = ""
         for key in self._balance.keys():
             result += self.currency_balance(key) + '\n'
@@ -71,6 +71,25 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         result += '\n'
         return result
 
+    def total_balance(self) -> str:
+        total_balance_rub = 0
+        for key, value in self._balance.items():
+            if key != "RUB":
+                total_balance_rub += value * self._rate_dict[key]
+            else:
+                total_balance_rub += value
+        total_balance_dict: dict[str, str] = {"RUB": str(total_balance_rub) + " RUB"}
+
+        for key, value in self._rate_dict.items():
+            total_balance_dict.update({key: str(total_balance_rub / value) + " " + key})
+        result: str = "sum: "
+        for index, value in enumerate(total_balance_dict.values(), start=1):
+            if index == 1:
+                result += value
+            else:
+                result += " / " + value
+        return result
+
 
 async def _currency_balance_get(request: web.Request):
     currency_name: str = request.match_info['name']
@@ -80,8 +99,8 @@ async def _currency_balance_get(request: web.Request):
 
 async def _all_currencies_balance_get(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
-    return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates(),
-                        headers={'content-type': 'text/plain'})
+    return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates() +
+                        microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
 async def _start_background_tasks(app):
@@ -90,9 +109,10 @@ async def _start_background_tasks(app):
 
 
 async def _on_server_shutdown(app):
-    microservice: AccountingMicroservice = app['microservice_instance']
     app['rate_fetch'].cancel()
     await app['rate_fetch']
+    # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
+    await asyncio.sleep(0.1)
 
 
 def main():
