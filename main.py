@@ -102,7 +102,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
     def set_amount(self, balance_dict: dict[str, float]):
         """Synchronous function to set amount from payload. Returns True if setting is successful"""
         # Preventing illegal currency names in payload
-        if all([(key in self._balance.keys()) for key in balance_dict.keys()]):
+        if all([(key.upper() in self._balance.keys()) for key in balance_dict.keys()]):
             for key in balance_dict.keys():
                 # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
@@ -115,7 +115,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
     def modify_amount(self, modification_dict: dict[str, float]):
         """Synchronous function to modify amount from payload. Returns True if modification is successful"""
         # Preventing illegal currency names in payload
-        if all([(key in self._balance.keys()) for key in modification_dict.keys()]):
+        if all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]):
             for key in modification_dict.keys():
                 # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
