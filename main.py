@@ -51,7 +51,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         result += '\n'
         return result
 
-    def calculate_non_rub_rates(self) -> dict[str, float]:
+    def _calculate_non_rub_rates(self) -> dict[str, float]:
         """Synchronous methods that calculates non-rub exchange rates as they are not stored"""
         result_dict = {}
         rate_dict = self._rate_dict.copy()
@@ -72,7 +72,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         for key, value in self._rate_dict.items():
             result += rate_format.format(currencies='RUB-' + key, rate=value)
 
-        non_rub_rates = self.calculate_non_rub_rates()
+        non_rub_rates = self._calculate_non_rub_rates()
         for key, value in non_rub_rates.items():
             result += rate_format.format(currencies=key, rate=value)
 
