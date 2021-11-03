@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from aiohttp import ClientSession, web
+import requests
 import json
 import argparse
 from microservice import AbstractAccountingMicroservice
@@ -11,8 +12,12 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         """Warning: for proper functionality keys of variable balance should contain capitalized
         abbreviations of currency names, e.g. USD"""
         self._balance = balance
+
+        # fetching rates on startup
+        response = requests.get(r'https://www.cbr-xml-daily.ru/daily_json.js')
+        rates = json.loads(response.text)['Valute']
         # RUB to RUB exchange rate is 1 to 1; no need to store it
-        self._rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
+        self._rate_dict = {key: rates[key]['Value'] for key in balance.keys() if key != "RUB"}
         self._period_seconds = period_minutes * 60
 
     async def get_exchange_rate_async(self):
@@ -22,12 +27,12 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         async with ClientSession() as session:
             while not cancelled:
                 try:
+                    await asyncio.sleep(self._period_seconds)
                     async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                         text: str = await response.text()
                     rates = json.loads(text)['Valute']
                     for key in self._rate_dict.keys():
                         self._rate_dict[key] = rates[key]["Value"]
-                    await asyncio.sleep(self._period_seconds)
                 except asyncio.CancelledError:
                     cancelled = True
 
@@ -60,7 +65,8 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         return result_dict
 
     def all_currencies_rates(self) -> str:
-        """Synchronous method to display all the exchange rates (including the non-RUB ones"""
+        """Synchronous method to pass all the exchange rates (including the non-RUB ones)   into
+        aiohttp-compatible handlers"""
         result: str = ""
         rate_format = '{currencies}:{rate}\n'
         for key, value in self._rate_dict.items():
@@ -74,6 +80,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         return result
 
     def total_balance(self) -> str:
+        """Synchronous method to pass the balance total into aiohttp-compatible handlers"""
         total_balance_rub = 0
         for key, value in self._balance.items():
             if key != "RUB":
