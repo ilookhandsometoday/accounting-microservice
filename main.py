@@ -113,7 +113,9 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
             return False
 
     def modify_amount(self, modification_dict: dict[str, float]):
-        """Synchronous function to modify amount from payload. Returns True if modification is successful"""
+        """Synchronous function to modify amount from payload.
+        Keys have to be all lowercase.
+        Returns True if modification is successful"""
         # Preventing illegal currency names in payload
         if all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]):
             for key in modification_dict.keys():
