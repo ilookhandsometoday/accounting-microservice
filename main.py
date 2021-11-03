@@ -8,6 +8,8 @@ from microservice import AbstractAccountingMicroservice
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
     def __init__(self, period_minutes: int, balance: dict[str, float]):
+        """Warning: for proper functionality keys of variable balance should contain capitalized
+        abbreviations of currency names, e.g. USD"""
         self._balance = balance
         # RUB to RUB exchange rate is 1 to 1; no need to store it
         self._rate_dict = {key: 0 for key in balance.keys() if key != "RUB"}
@@ -90,6 +92,21 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 result += " / " + value
         return result
 
+    def set_amount(self, balance_dict: dict[str, float]):
+        """Synchronous function to set amount from payload """
+        for key in balance_dict.keys():
+            # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
+            key_upper = key.upper()
+            if key_upper in self._balance:
+                self._balance[key_upper] = balance_dict[key]
+
+
+async def _set_amount(request: web.Request):
+    microservice: AccountingMicroservice = request.app['microservice_instance']
+    body: dict[str, int] = await request.json()
+    microservice.set_amount(body)
+    return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
+
 
 async def _currency_balance_get(request: web.Request):
     currency_name: str = request.match_info['name']
@@ -134,7 +151,8 @@ def main():
     app.on_startup.append(_start_background_tasks)
     app.on_shutdown.append(_on_server_shutdown)
     app.add_routes([web.get(r'/{name:[a-z]{3}}/get', _currency_balance_get),
-                    web.get('/amount/get', _all_currencies_balance_get)])
+                    web.get('/amount/get', _all_currencies_balance_get),
+                    web.post('/amount/set', _set_amount)])
     web.run_app(app, host="localhost", port=8080)
 
 
