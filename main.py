@@ -93,34 +93,50 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         return result
 
     def set_amount(self, balance_dict: dict[str, float]):
-        """Synchronous function to set amount from payload """
-        for key in balance_dict.keys():
-            # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
-            key_upper = key.upper()
-            if key_upper in self._balance:
-                self._balance[key_upper] = balance_dict[key]
+        """Synchronous function to set amount from payload. Returns True if setting is successful"""
+        # Preventing illegal currency names in payload
+        if all([(key in self._balance.keys()) for key in balance_dict.keys()]):
+            for key in balance_dict.keys():
+                # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
+                key_upper = key.upper()
+                if key_upper in self._balance:
+                    self._balance[key_upper] = balance_dict[key]
+            return True
+        else:
+            return False
 
     def modify_amount(self, modification_dict: dict[str, float]):
-        """Synchronous function to modify amount from payload"""
-        for key in modification_dict.keys():
-            # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
-            key_upper = key.upper()
-            if key_upper in self._balance:
-                self._balance[key_upper] += modification_dict[key]
+        """Synchronous function to modify amount from payload. Returns True if modification is successful"""
+        # Preventing illegal currency names in payload
+        if all([(key in self._balance.keys()) for key in modification_dict.keys()]):
+            for key in modification_dict.keys():
+                # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
+                key_upper = key.upper()
+                if key_upper in self._balance:
+                    self._balance[key_upper] += modification_dict[key]
+            return True
+        else:
+            return False
 
 
 async def _modify_amount(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
     body: dict[str, float] = await request.json()
-    microservice.modify_amount(body)
-    return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
+    modification_successful = microservice.modify_amount(body)
+    if modification_successful:
+        return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
+    else:
+        return web.Response(text="Amount modified failed!r", headers={'content-type': 'text/plain'}, status=422)
 
 
 async def _set_amount(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
     body: dict[str, float] = await request.json()
-    microservice.set_amount(body)
-    return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
+    setting_successful = microservice.set_amount(body)
+    if setting_successful:
+        return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
+    else:
+        return web.Response(text="Amount set failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
 async def _currency_balance_get(request: web.Request):
