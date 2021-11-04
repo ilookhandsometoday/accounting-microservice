@@ -188,7 +188,7 @@ async def _start_background_tasks(app: web.Application):
 async def _on_server_shutdown(app: web.Application):
     app['rate_fetch'].cancel()
     await app['rate_fetch']
-    
+
     app['print_amount'].cancel()
     await app['print_amount']
     # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
@@ -217,6 +217,7 @@ def main():
                     web.get('/amount/get', _all_currencies_balance_get),
                     web.post('/amount/set', _set_amount),
                     web.post('/modify', _modify_amount)])
+    print("App startup; initial balance and rates:")
     web.run_app(app, host="localhost", port=8080)
 
 
