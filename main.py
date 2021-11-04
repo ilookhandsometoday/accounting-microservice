@@ -12,12 +12,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         """Warning: for proper functionality keys of variable balance should contain capitalized
         abbreviations of currency names, e.g. USD"""
         self._balance = balance
-
+        logging.info("Balance is set")
         # fetching rates on startup
         response = requests.get(r'https://www.cbr-xml-daily.ru/daily_json.js')
         rates = json.loads(response.text)['Valute']
         # RUB to RUB exchange rate is 1 to 1; no need to store it
         self._rate_dict = {key: rates[key]['Value'] for key in balance.keys() if key != "RUB"}
+        logging.info("Initial currency rates fetched")
         self._period_seconds = period_minutes * 60
 
     async def amount_print_async(self):
@@ -31,10 +32,14 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         previous_rates = {key: -1 for key in self._rate_dict.keys()}
         while not cancelled:
             try:
+                logging.info("Printing verbose balance info...")
                 if previous_balance != self._balance or previous_rates != self._rate_dict:
                     previous_rates = self._rate_dict.copy()
                     previous_balance = self._balance.copy()
-                    print(self.all_currencies_balance() + self.all_currencies_rates() + self.total_balance())
+                    logging.info(self.all_currencies_balance() + self.all_currencies_rates() + self.total_balance() +
+                                 "\nVerbose balance info printed")
+                else:
+                    logging.info("Balance or rates have not changed. Verbose balance info is not printed")
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
                 cancelled = True
@@ -47,11 +52,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
             while not cancelled:
                 try:
                     await asyncio.sleep(self._period_seconds)
+                    logging.info("Fetching currency rates...")
                     async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                         text: str = await response.text()
                     rates = json.loads(text)['Valute']
                     for key in self._rate_dict.keys():
                         self._rate_dict[key] = rates[key]["Value"]
+                    logging.info("Currency rates fetch successful")
                 except asyncio.CancelledError:
                     cancelled = True
 
@@ -138,7 +145,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         # Preventing illegal currency names in payload
         if all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]):
             for key in modification_dict.keys():
-                # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
+                # the specified format in which payload is sent could be {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
                 if key_upper in self._balance:
                     self._balance[key_upper] += modification_dict[key]
@@ -154,6 +161,7 @@ async def _modify_amount(request: web.Request):
     if modification_successful:
         return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
     else:
+        logging.warning("Modifying the amount failed. Illegal key")
         return web.Response(text="Amount modified failed!r", headers={'content-type': 'text/plain'}, status=422)
 
 
@@ -164,6 +172,7 @@ async def _set_amount(request: web.Request):
     if setting_successful:
         return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
     else:
+        logging.warning("Setting the amount failed. Illegal key")
         return web.Response(text="Amount set failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
@@ -186,6 +195,7 @@ async def _start_background_tasks(app: web.Application):
 
 
 async def _on_server_shutdown(app: web.Application):
+    logging.info("Shutting down...")
     app['rate_fetch'].cancel()
     await app['rate_fetch']
 
@@ -207,6 +217,7 @@ def main():
                         metavar="X")
     arguments = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO)
     microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
                                                              "RUB": arguments.rub})
     app = web.Application()
@@ -217,8 +228,8 @@ def main():
                     web.get('/amount/get', _all_currencies_balance_get),
                     web.post('/amount/set', _set_amount),
                     web.post('/modify', _modify_amount)])
-    print("App startup; initial balance and rates:")
-    web.run_app(app, host="localhost", port=8080)
+    logging.info("Server startup...")
+    web.run_app(app, host="localhost", port=8080, print=logging.info)
 
 
 if __name__ == "__main__":
