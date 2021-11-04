@@ -20,6 +20,25 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         self._rate_dict = {key: rates[key]['Value'] for key in balance.keys() if key != "RUB"}
         self._period_seconds = period_minutes * 60
 
+    async def amount_print_async(self):
+        """Asynchronous function created with a purpose of outputting the amount in the console every minute"""
+        cancelled = False
+        previous_balance = {key: 0 for key in self._balance.keys()}
+        # every minute this function is supposed to print out the text, that is returned on GET /amount/get
+        # given that the balance or the rates have changed
+        # previous_rates values set to -1 to guarantee this prints once on startup given previous conditions
+        # there is no way to ensure that with previous_balance values
+        previous_rates = {key: -1 for key in self._rate_dict.keys()}
+        while not cancelled:
+            try:
+                if previous_balance != self._balance or previous_rates != self._rate_dict:
+                    previous_rates = self._rate_dict.copy()
+                    previous_balance = self._balance.copy()
+                    print(self.all_currencies_balance() + self.all_currencies_rates() + self.total_balance())
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancelled = True
+
     async def get_exchange_rate_async(self):
         """Asynchronously fetches exchange rates from an external API based on keys from rate_dict.
         Stores them as values of rate_dict"""
@@ -160,14 +179,18 @@ async def _all_currencies_balance_get(request: web.Request):
                         microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
-async def _start_background_tasks(app):
+async def _start_background_tasks(app: web.Application):
     microservice: AccountingMicroservice = app['microservice_instance']
     app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
+    app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
 
 
-async def _on_server_shutdown(app):
+async def _on_server_shutdown(app: web.Application):
     app['rate_fetch'].cancel()
     await app['rate_fetch']
+
+    app['print_amount'].cancel()
+    await app['print_amount']
     # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
     await asyncio.sleep(0.1)
 
@@ -194,6 +217,7 @@ def main():
                     web.get('/amount/get', _all_currencies_balance_get),
                     web.post('/amount/set', _set_amount),
                     web.post('/modify', _modify_amount)])
+    print("App startup; initial balance and rates:")
     web.run_app(app, host="localhost", port=8080)
 
 
