@@ -1,10 +1,20 @@
 import asyncio
 import logging
 from aiohttp import ClientSession, web
+from aiohttp.abc import AbstractAccessLogger
 import requests
 import json
 import argparse
 from microservice import AbstractAccountingMicroservice
+
+
+class AccessLogger(AbstractAccessLogger):
+
+    def log(self, request, response, time):
+        self.logger.debug(f'{request.remote} '
+                          f'"{request.method} {request.path} '
+                          f'done in {time}s: {response.status} '
+                          f'response text:\n{response.text}')
 
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
@@ -162,7 +172,7 @@ async def _modify_amount(request: web.Request):
         return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
     else:
         logging.warning("Modifying the amount failed. Illegal key")
-        return web.Response(text="Amount modified failed!r", headers={'content-type': 'text/plain'}, status=422)
+        return web.Response(text="Amount modified failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
 async def _set_amount(request: web.Request):
@@ -185,13 +195,14 @@ async def _currency_balance_get(request: web.Request):
 async def _all_currencies_balance_get(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
     return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates() +
-                        microservice.total_balance(), headers={'content-type': 'text/plain'})
+                             microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
 async def _start_background_tasks(app: web.Application):
     microservice: AccountingMicroservice = app['microservice_instance']
     app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
-    app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
+    if logging.getLogger().level != logging.DEBUG:
+        app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
 
 
 async def _on_server_shutdown(app: web.Application):
@@ -199,9 +210,10 @@ async def _on_server_shutdown(app: web.Application):
     app['rate_fetch'].cancel()
     await app['rate_fetch']
 
-    app['print_amount'].cancel()
-    await app['print_amount']
-    # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
+    if logging.getLogger().level != logging.DEBUG:
+        app['print_amount'].cancel()
+        await app['print_amount']
+        # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
     await asyncio.sleep(0.1)
 
 
@@ -215,9 +227,17 @@ def main():
                         metavar="X")
     parser.add_argument("--rub", action="store", default=0, type=float, required=False, help="starting balance of RUB",
                         metavar="X")
+    parser.add_argument("--debug", action="store",
+                        choices=['1', '0', 'true', 'false', 'True', 'False', 'y', 'n', 'Y', 'N'],
+                        default='False', type=str, help="enable or disable debug. Disabled by default")
     arguments = parser.parse_args()
+    logging_level = logging.INFO
+    if arguments.debug in ['1', 'true', 'True', 'y', 'Y']:
+        logging_level = logging.DEBUG
+    logging.basicConfig(level=logging_level)
+    logging.info(f"Parameters: --period {arguments.period}, " +
+                 f"--usd {arguments.usd}, --rub {arguments.rub}, --eur {arguments.eur}")
 
-    logging.basicConfig(level=logging.INFO)
     microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
                                                              "RUB": arguments.rub})
     app = web.Application()
@@ -229,7 +249,7 @@ def main():
                     web.post('/amount/set', _set_amount),
                     web.post('/modify', _modify_amount)])
     logging.info("Server startup...")
-    web.run_app(app, host="localhost", port=8080, print=logging.info)
+    web.run_app(app, host="localhost", port=8080, print=logging.info, access_log_class=AccessLogger)
 
 
 if __name__ == "__main__":
