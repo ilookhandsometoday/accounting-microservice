@@ -16,7 +16,7 @@ class AccessLogger(AbstractAccessLogger):
         self.logger.debug(f'{request.remote} '
                           f'{request.method} {request.path} {request_text} '
                           f'done in {time}s: {response.status} '
-                          # here we know for sure that response is web.Response and it has a text propery
+                          # here we know for sure that response is web.Response and it has a text property
                           f'response text: {response.text}')
 
 
