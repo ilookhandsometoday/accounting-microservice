@@ -1,10 +1,27 @@
 import asyncio
 import logging
 from aiohttp import ClientSession, web
+from aiohttp.abc import AbstractAccessLogger
 import requests
 import json
 import argparse
 from microservice import AbstractAccountingMicroservice
+
+
+class AccessLogger(AbstractAccessLogger):
+    def log(self, request, response, time):
+        # this is a workaround, this could be done better with aiohttp v.4.0.0,
+        # as there will be an AbstractAsyncAccessLogger
+        request_payload = ""
+        request_payload_bytes = request._read_bytes
+        if request_payload_bytes is not None:
+            request_payload += " " + request_payload_bytes.decode('UTF-8')
+
+        self.logger.debug(f'{request.remote} '
+                          f'{request.method} {request.path}{request_payload} '
+                          f'done in {time}s: {response.status} '
+                          # here we know for sure that response is web.Response and it has a text property
+                          f'response text:\n{response.text}')
 
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
@@ -12,12 +29,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         """Warning: for proper functionality keys of variable balance should contain capitalized
         abbreviations of currency names, e.g. USD"""
         self._balance = balance
-
+        logging.info("Balance is set")
         # fetching rates on startup
         response = requests.get(r'https://www.cbr-xml-daily.ru/daily_json.js')
         rates = json.loads(response.text)['Valute']
         # RUB to RUB exchange rate is 1 to 1; no need to store it
         self._rate_dict = {key: rates[key]['Value'] for key in balance.keys() if key != "RUB"}
+        logging.info("Initial currency rates fetched")
         self._period_seconds = period_minutes * 60
 
     async def amount_print_async(self):
@@ -31,10 +49,14 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         previous_rates = {key: -1 for key in self._rate_dict.keys()}
         while not cancelled:
             try:
+                logging.info("Printing verbose balance info...")
                 if previous_balance != self._balance or previous_rates != self._rate_dict:
                     previous_rates = self._rate_dict.copy()
                     previous_balance = self._balance.copy()
-                    print(self.all_currencies_balance() + self.all_currencies_rates() + self.total_balance())
+                    logging.info(self.all_currencies_balance() + self.all_currencies_rates() + self.total_balance() +
+                                 "\nVerbose balance info printed")
+                else:
+                    logging.info("Balance or rates have not changed. Verbose balance info is not printed")
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
                 cancelled = True
@@ -47,11 +69,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
             while not cancelled:
                 try:
                     await asyncio.sleep(self._period_seconds)
+                    logging.info("Fetching currency rates...")
                     async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
                         text: str = await response.text()
                     rates = json.loads(text)['Valute']
                     for key in self._rate_dict.keys():
                         self._rate_dict[key] = rates[key]["Value"]
+                    logging.info("Currency rates fetch successful")
                 except asyncio.CancelledError:
                     cancelled = True
 
@@ -138,7 +162,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         # Preventing illegal currency names in payload
         if all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]):
             for key in modification_dict.keys():
-                # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
+                # the specified format in which payload is sent could be {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
                 if key_upper in self._balance:
                     self._balance[key_upper] += modification_dict[key]
@@ -154,7 +178,8 @@ async def _modify_amount(request: web.Request):
     if modification_successful:
         return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
     else:
-        return web.Response(text="Amount modified failed!r", headers={'content-type': 'text/plain'}, status=422)
+        logging.warning("Modifying the amount failed. Illegal key")
+        return web.Response(text="Amount modified failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
 async def _set_amount(request: web.Request):
@@ -164,6 +189,7 @@ async def _set_amount(request: web.Request):
     if setting_successful:
         return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
     else:
+        logging.warning("Setting the amount failed. Illegal key")
         return web.Response(text="Amount set failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
@@ -176,22 +202,25 @@ async def _currency_balance_get(request: web.Request):
 async def _all_currencies_balance_get(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
     return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates() +
-                        microservice.total_balance(), headers={'content-type': 'text/plain'})
+                             microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
 async def _start_background_tasks(app: web.Application):
     microservice: AccountingMicroservice = app['microservice_instance']
     app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
-    app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
+    if logging.getLogger().level != logging.DEBUG:
+        app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
 
 
 async def _on_server_shutdown(app: web.Application):
+    logging.info("Shutting down...")
     app['rate_fetch'].cancel()
     await app['rate_fetch']
 
-    app['print_amount'].cancel()
-    await app['print_amount']
-    # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
+    if logging.getLogger().level != logging.DEBUG:
+        app['print_amount'].cancel()
+        await app['print_amount']
+        # prevents ugly error messages on app shutdown caused by flaws in asyncio implementation
     await asyncio.sleep(0.1)
 
 
@@ -205,7 +234,16 @@ def main():
                         metavar="X")
     parser.add_argument("--rub", action="store", default=0, type=float, required=False, help="starting balance of RUB",
                         metavar="X")
+    parser.add_argument("--debug", action="store",
+                        choices=['1', '0', 'true', 'false', 'True', 'False', 'y', 'n', 'Y', 'N'],
+                        default='False', type=str, help="enable or disable debug. Disabled by default")
     arguments = parser.parse_args()
+    logging_level = logging.INFO
+    if arguments.debug in ['1', 'true', 'True', 'y', 'Y']:
+        logging_level = logging.DEBUG
+    logging.basicConfig(level=logging_level)
+    logging.info(f"Parameters: --period {arguments.period}, " +
+                 f"--usd {arguments.usd}, --rub {arguments.rub}, --eur {arguments.eur}")
 
     microservice = AccountingMicroservice(arguments.period, {"USD": arguments.usd, "EUR": arguments.eur,
                                                              "RUB": arguments.rub})
@@ -217,8 +255,8 @@ def main():
                     web.get('/amount/get', _all_currencies_balance_get),
                     web.post('/amount/set', _set_amount),
                     web.post('/modify', _modify_amount)])
-    print("App startup; initial balance and rates:")
-    web.run_app(app, host="localhost", port=8080)
+    logging.info("Server startup...")
+    web.run_app(app, host="localhost", port=8080, print=logging.info, access_log_class=AccessLogger)
 
 
 if __name__ == "__main__":
