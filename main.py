@@ -12,12 +12,16 @@ class AccessLogger(AbstractAccessLogger):
     def log(self, request, response, time):
         # this is a workaround, this could be done better with aiohttp v.4.0.0,
         # as there will be an AbstractAsyncAccessLogger
-        request_text = request._read_bytes.decode('UTF-8')
+        request_payload = ""
+        request_payload_bytes = request._read_bytes
+        if request_payload_bytes is not None:
+            request_payload += " " + request_payload_bytes.decode('UTF-8')
+
         self.logger.debug(f'{request.remote} '
-                          f'{request.method} {request.path} {request_text} '
+                          f'{request.method} {request.path}{request_payload} '
                           f'done in {time}s: {response.status} '
                           # here we know for sure that response is web.Response and it has a text property
-                          f'response text: {response.text}')
+                          f'response text:\n{response.text}')
 
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
