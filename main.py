@@ -9,12 +9,14 @@ from microservice import AbstractAccountingMicroservice
 
 
 class AccessLogger(AbstractAccessLogger):
-
     def log(self, request, response, time):
+        # this is a workaround, this could be done better with aiohttp v.4.0.0,
+        # as there will be an AbstractAsyncAccessLogger
+        request_text = request._read_bytes.decode('UTF-8')
         self.logger.debug(f'{request.remote} '
-                          f'"{request.method} {request.path} '
+                          f'{request.method} {request.path} {request_text} '
                           f'done in {time}s: {response.status} '
-                          f'response text:\n{response.text}')
+                          f'response text: {response.text}')
 
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
