@@ -202,7 +202,7 @@ async def _currency_balance_get(request: web.Request):
 async def _all_currencies_balance_get(request: web.Request):
     microservice: AccountingMicroservice = request.app['microservice_instance']
     return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates() +
-                             microservice.total_balance(), headers={'content-type': 'text/plain'})
+                        microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
 async def _start_background_tasks(app: web.Application):
