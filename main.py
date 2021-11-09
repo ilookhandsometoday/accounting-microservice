@@ -25,7 +25,7 @@ class AccessLogger(AbstractAccessLogger):
 
 
 class AccountingMicroservice(AbstractAccountingMicroservice):
-    def __init__(self, period_minutes: int, balance: dict[str, float]):
+    def __init__(self, period_minutes, balance):
         """Warning: for proper functionality keys of variable balance should contain capitalized
         abbreviations of currency names, e.g. USD"""
         self._balance = balance
@@ -71,7 +71,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                     await asyncio.sleep(self._period_seconds)
                     logging.info("Fetching currency rates...")
                     async with session.get(r'https://www.cbr-xml-daily.ru/daily_json.js') as response:
-                        text: str = await response.text()
+                        text = await response.text()
                     rates = json.loads(text)['Valute']
                     for key in self._rate_dict.keys():
                         self._rate_dict[key] = rates[key]["Value"]
@@ -79,22 +79,22 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 except asyncio.CancelledError:
                     cancelled = True
 
-    def currency_balance(self, currency: str) -> str:
+    def currency_balance(self, currency):
         """Synchronous method to pass the currency balance into the aiohttp-compatible handlers"""
-        result_format: str = '{curr}:{bal}'
+        result_format = '{curr}:{bal}'
         if currency.islower():
             currency = currency.upper()
         return result_format.format(curr=currency, bal=self._balance[currency])
 
-    def all_currencies_balance(self) -> str:
+    def all_currencies_balance(self):
         """Synchronous method to pass the balance of each currency into the aiohttp-compatible handlers"""
-        result: str = ""
+        result= ""
         for key in self._balance.keys():
             result += self.currency_balance(key) + '\n'
         result += '\n'
         return result
 
-    def _calculate_non_rub_rates(self) -> dict[str, float]:
+    def _calculate_non_rub_rates(self):
         """Synchronous methods that calculates non-rub exchange rates as they are not stored"""
         result_dict = {}
         rate_dict = self._rate_dict.copy()
@@ -107,10 +107,10 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 result_dict.update({popped_currency[0] + '-' + key: rate})
         return result_dict
 
-    def all_currencies_rates(self) -> str:
+    def all_currencies_rates(self):
         """Synchronous method to pass all the exchange rates (including the non-RUB ones)   into
         aiohttp-compatible handlers"""
-        result: str = ""
+        result = ""
         rate_format = '{currencies}:{rate}\n'
         for key, value in self._rate_dict.items():
             result += rate_format.format(currencies='RUB-' + key, rate=value)
@@ -122,7 +122,7 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         result += '\n'
         return result
 
-    def total_balance(self) -> str:
+    def total_balance(self):
         """Synchronous method to pass the balance total into aiohttp-compatible handlers"""
         total_balance_rub = 0
         for key, value in self._balance.items():
@@ -130,11 +130,11 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 total_balance_rub += value * self._rate_dict[key]
             else:
                 total_balance_rub += value
-        total_balance_dict: dict[str, str] = {"RUB": str(total_balance_rub) + " RUB"}
+        total_balance_dict = {"RUB": str(total_balance_rub) + " RUB"}
 
         for key, value in self._rate_dict.items():
             total_balance_dict.update({key: str(total_balance_rub / value) + " " + key})
-        result: str = "sum: "
+        result = "sum: "
         for index, value in enumerate(total_balance_dict.values(), start=1):
             if index == 1:
                 result += value
@@ -142,10 +142,11 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
                 result += " / " + value
         return result
 
-    def set_amount(self, balance_dict: dict[str, float]):
+    def set_amount(self, balance_dict):
         """Synchronous function to set amount from payload. Returns True if setting is successful"""
         # Preventing illegal currency names in payload
-        if all([(key.upper() in self._balance.keys()) for key in balance_dict.keys()]):
+        if (all([(key.upper() in self._balance.keys()) for key in balance_dict.keys()]) and
+                all([isinstance(value, (int, float)) for value in balance_dict.values()])):
             for key in balance_dict.keys():
                 # the specified format in which payload is sent is {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
@@ -155,12 +156,13 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
         else:
             return False
 
-    def modify_amount(self, modification_dict: dict[str, float]):
+    def modify_amount(self, modification_dict):
         """Synchronous function to modify amount from payload.
         Keys have to be all lowercase.
         Returns True if modification is successful"""
         # Preventing illegal currency names in payload
-        if all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]):
+        if (all([(key.upper() in self._balance.keys()) for key in modification_dict.keys()]) and
+                all([isinstance(value, (int, float)) for value in modification_dict.values()])):
             for key in modification_dict.keys():
                 # the specified format in which payload is sent could be {"usd":10}, so keys have to be made upper case
                 key_upper = key.upper()
@@ -171,9 +173,9 @@ class AccountingMicroservice(AbstractAccountingMicroservice):
             return False
 
 
-async def _modify_amount(request: web.Request):
-    microservice: AccountingMicroservice = request.app['microservice_instance']
-    body: dict[str, float] = await request.json()
+async def _modify_amount(request):
+    microservice = request.app['microservice_instance']
+    body = await request.json()
     modification_successful = microservice.modify_amount(body)
     if modification_successful:
         return web.Response(text="Amount modified successfully!", headers={'content-type': 'text/plain'})
@@ -182,9 +184,9 @@ async def _modify_amount(request: web.Request):
         return web.Response(text="Amount modified failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
-async def _set_amount(request: web.Request):
-    microservice: AccountingMicroservice = request.app['microservice_instance']
-    body: dict[str, float] = await request.json()
+async def _set_amount(request):
+    microservice = request.app['microservice_instance']
+    body = await request.json()
     setting_successful = microservice.set_amount(body)
     if setting_successful:
         return web.Response(text="Amount set successfully!", headers={'content-type': 'text/plain'})
@@ -193,26 +195,26 @@ async def _set_amount(request: web.Request):
         return web.Response(text="Amount set failed!", headers={'content-type': 'text/plain'}, status=422)
 
 
-async def _currency_balance_get(request: web.Request):
-    currency_name: str = request.match_info['name']
-    microservice: AccountingMicroservice = request.app['microservice_instance']
+async def _currency_balance_get(request):
+    currency_name = request.match_info['name']
+    microservice = request.app['microservice_instance']
     return web.Response(text=microservice.currency_balance(currency_name), headers={'content-type': 'text/plain'})
 
 
-async def _all_currencies_balance_get(request: web.Request):
-    microservice: AccountingMicroservice = request.app['microservice_instance']
+async def _all_currencies_balance_get(request):
+    microservice = request.app['microservice_instance']
     return web.Response(text=microservice.all_currencies_balance() + microservice.all_currencies_rates() +
                         microservice.total_balance(), headers={'content-type': 'text/plain'})
 
 
-async def _start_background_tasks(app: web.Application):
-    microservice: AccountingMicroservice = app['microservice_instance']
+async def _start_background_tasks(app):
+    microservice = app['microservice_instance']
     app['rate_fetch'] = asyncio.create_task(microservice.get_exchange_rate_async())
     if logging.getLogger().level != logging.DEBUG:
         app['print_amount'] = asyncio.create_task(microservice.amount_print_async())
 
 
-async def _on_server_shutdown(app: web.Application):
+async def _on_server_shutdown(app):
     logging.info("Shutting down...")
     app['rate_fetch'].cancel()
     await app['rate_fetch']
